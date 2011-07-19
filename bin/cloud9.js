@@ -25,7 +25,7 @@ var options = Parser.parse([
     {short: "u", long: "user", description: "Run child processes as a specific user.", def: false },
     {short: "g", long: "group", description: "Run child processes with a specific group.", def: false },
     {short: "c", long: "config", description: "Load the configuration from a config file. Overrides command-line options.", value: true, def: null, parser: function(value) {
-            var pref = ( value.charAt(0) == "/" ) ? "" :  process.cwd() + "/";
+            var pref = ( value.charAt(0) == "/" ) ? "" :  process.cwd() + "/";			
             return require(pref + value.replace(".js", "")).Config;
         }
     }
@@ -38,6 +38,12 @@ if (options.config) {
 }
 
 var version = options.version = JSON.parse(Fs.readFileSync(__dirname + "/../package.json")).version;
+
+// options.ip is an ip filter (i.e. the ips that will be handled)
+// thus, all ip's means that no filter is used.
+// adjust the value of options.ip according to that scheme
+if ( options.ip == "all" )
+	options.ip = null;
 
 require("cloud9").main(options);
 
@@ -65,7 +71,7 @@ Sys.puts("\n\n                         .  ..__%|iiiiiii=>,..\n\
                               version " + version + "\n\
 Project root is: " + options.workspace);
 
-if (options.ip === "all" || options.ip === "0.0.0.0")
+if (options.ip === null || options.ip === "0.0.0.0")
     options.ip = "localhost";
 
 var url = "http://" + options.ip + ":" + options.port;

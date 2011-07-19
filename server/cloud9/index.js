@@ -77,7 +77,12 @@ exports.main = function(options) {
     if (user)
         process.setuid(user);
 
-    server.listen(port, ip);
+	// if no ip "filter" is used, only listen to port
+	if ( ip === null )
+		server.listen(port);
+	// else, listen to port and ip
+	else
+		server.listen(port, ip);
 };
 
 process.on("uncaughtException", function(e) {
