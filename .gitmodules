@@ -12,7 +12,7 @@
 	url = http://github.com/ajaxorg/jsDAV.git
 [submodule "support/lib-v8debug"]
 	path = support/lib-v8debug
-	url = http://github.com/ajaxorg/lib-v8debug.git
+	url = http://github.com/matiskiba/lib-v8debug.git
 [submodule "support/ace"]
 	path = support/ace
 	url = http://github.com/ajaxorg/ace.git
