@@ -47,11 +47,14 @@ sys.inherits(DebuggerPlugin, Plugin);
                     _self.NODE_DEBUG_PORT = port;
                     message.preArgs = ["--debug=" + _self.NODE_DEBUG_PORT];
                     message.debug = true;
+					// in parallel (both operations translate to async processes):
+					// * execute a node process that executes the source file (with debug)
+					// * start a debug proxy process to handle communication with the debugger.
+					//   note: the debug proxy has a builtin retry functionality, this will
+					//         resolve incidents when the debugger is not ready yet for the
+					//		   proxy
                     _self.$run(message, client);
-
-                    setTimeout(function() {
-                        _self.$startDebug();
-                    }, 100);
+					_self.$startDebug();
                 });
                 break;
             case "rundebugbrk":
@@ -60,11 +63,14 @@ sys.inherits(DebuggerPlugin, Plugin);
 
                     message.preArgs = ["--debug-brk=" + _self.NODE_DEBUG_PORT];
                     message.debug = true;
+					// in parallel (both operations translate to async processes):
+					// * execute a node process that executes the source file (with debug)
+					// * start a debug proxy process to handle communication with the debugger.
+					//   note: the debug proxy has a builtin retry functionality, this will
+					//         resolve incidents when the debugger is not ready yet for the
+					//		   proxy
                     _self.$run(message, client);
-
-                    setTimeout(function() {
-                        _self.$startDebug();
-                    }, 100);
+					_self.$startDebug();
                 });
                 break;
             case "rundebugchrome":
@@ -76,7 +82,7 @@ sys.inherits(DebuggerPlugin, Plugin);
                 this.chromeDebugProxy.connect();
 
                 this.chromeDebugProxy.addEventListener("connection", function() {
-                    _self.send('{"type": "chrome-debug-ready"}', null, _self.name);
+                    _self.send({"type": "chrome-debug-ready"}, null, _self.name);
                 });
                 break;
             case "debugnode":
@@ -87,7 +93,7 @@ sys.inherits(DebuggerPlugin, Plugin);
                 break;
             case "debugattachnode":
                 if (this.nodeDebugProxy)
-                    this.send('{"type": "node-debug-ready"}', null, _self.name);
+                    this.send({"type": "node-debug-ready"}, null, _self.name);
                 break;
             case "kill":
                 this.$kill();
@@ -186,27 +192,52 @@ sys.inherits(DebuggerPlugin, Plugin);
 
     this.$startDebug = function(message) {
         var _self = this;
-
+		
+		/*
+		// this is not a good test, because:
+		// 1. the startDebug function is only used together with execution of
+		//	  debug process
+		// 2. the value of this.debugClient is changed upon events, thus
+		//	  making this inspection suseptible to race condition
         if (!this.debugClient)
             return this.error("No debuggable application running", 4, message);
+		*/
 
         if (this.nodeDebugProxy)
             return this.error("Debug session already running", 5, message);
-
+			
         this.nodeDebugProxy = new NodeDebugProxy(this.NODE_DEBUG_PORT);
         this.nodeDebugProxy.on("message", function(body) {
+				
             var msg = {
                 "type": "node-debug",
                 "body": body
             };
             _self.send(msg, null, _self.name);
         });
-
+		
         this.nodeDebugProxy.on("connection", function() {
-            _self.send('{"type": "node-debug-ready"}', null, _self.name);
+            _self.send({"type": "node-debug-ready"}, null, _self.name);
         });
 
-        this.nodeDebugProxy.on("end", function() {
+        this.nodeDebugProxy.on("end", function(errorInfo) {
+			// incase an error occured, send a message back to the client
+			if ( ( errorInfo != undefined ) && ( errorInfo != null ) )		
+			{
+				// TODO: errorInfo should be an exception instance with more fields
+				// TODO: in this case the debugger process is still running.
+				//	     we need to kill that process, while not interfering with other
+				//	     parts of the source.
+				//		 Also, the idea is that if the "node-exit-with-error" event
+				//	     is dispatched, than the "node-exit" event is not.
+				// TODO: in theory a "node-start" event might be sent after this event (though
+				//       extremely unlikely. Deal with all this event mess
+				_self.send({"type": "node-exit-with-error",errorMessage:errorInfo}, null, _self.name);
+				_self.debugClient = false;
+				delete _self.child;
+				delete _self.nodeDebugProxy;				
+			}
+				
             if (_self.nodeDebugProxy == this) {
                 delete _self.nodeDebugProxy;
             }
