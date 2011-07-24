@@ -18,7 +18,7 @@
 	url = http://github.com/ajaxorg/ace.git
 [submodule "support/apf"]
 	path = support/apf
-	url = http://github.com/ajaxorg/apf.git
+	url = git@github.com:matiskiba/apf.git 
 [submodule "support/node-builds-v4"]
 	path = support/node-builds-v4
 	url = http://github.com/ajaxorg/node-builds-v4.git
