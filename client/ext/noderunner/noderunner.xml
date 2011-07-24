@@ -14,6 +14,12 @@
       autoinit        = "false"
       model-tabs      = "mdlTabs"
       state-connected = "stDebuggerConnected" />
+
+    <a:debughost id="dbgGeneric"
+      type            = "generic-ws"
+      autoinit        = "false"
+      model-tabs      = "mdlTabs"
+      state-connected = "stDebuggerConnected" />
       
     <a:debughost id="dbgChrome"
       type     = "chrome-ws"

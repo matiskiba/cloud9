@@ -7,6 +7,7 @@
 var Path             = require("path"),
     Spawn            = require("child_process").spawn,
     NodeDebugProxy   = require("./nodedebugproxy"),
+    PythonDebugProxy   = require("./pythondebugproxy"),
     ChromeDebugProxy = require("./chromedebugproxy"),
     Plugin           = require("cloud9/plugin"),
     sys              = require("sys"),
@@ -17,12 +18,15 @@ var DebuggerPlugin = module.exports = function(ide, workspace) {
     this.hooks = ["command"];
     this.name = "debugger";
     this.nodeCmd = process.argv[0];
+	// TODO: change to general python version
+	this.pythonCmd = "python2.7"
+	this.pythonArgs = ["-u"]
 };
 
 sys.inherits(DebuggerPlugin, Plugin);
 
 (function() {
-    this.NODE_DEBUG_PORT = 5858;
+    this.DEBUG_PORT = 5858;
     this.CHROME_DEBUG_PORT = 9222;
 
     this.init = function() {
@@ -40,37 +44,51 @@ sys.inherits(DebuggerPlugin, Plugin);
             res = true;
         switch (cmd) {
             case "run":
-                this.$run(message, client);
+				this.$run(message, client);
                 break;
             case "rundebug":
-                netutil.findFreePort(this.NODE_DEBUG_PORT, "localhost", function(port) {
-                    _self.NODE_DEBUG_PORT = port;
-                    message.preArgs = ["--debug=" + _self.NODE_DEBUG_PORT];
-                    message.debug = true;
+                netutil.findFreePort(this.DEBUG_PORT, "localhost", function(port) {
+                    _self.DEBUG_PORT = port;
+					
+					// set debugger arguments based on runner
+					// TODO: the business logic of executing the debugger should not be here
+					if ( message.runner == "js" )
+						message.preArgs = ["--debug=" + _self.DEBUG_PORT];
+					else if ( message.runner == "py" )
+						// TODO: forward slash ("\") for windows?
+						message.preArgs = [process.env.PWD + "/rpdb.py","--port", _self.DEBUG_PORT];
+						
+					message.debug = true;
 					// in parallel (both operations translate to async processes):
 					// * execute a node process that executes the source file (with debug)
 					// * start a debug proxy process to handle communication with the debugger.
 					//   note: the debug proxy has a builtin retry functionality, this will
 					//         resolve incidents when the debugger is not ready yet for the
 					//		   proxy
-                    _self.$run(message, client);
-					_self.$startDebug();
+					_self.$run(message, client);
+					_self.$startDebug(message);
                 });
                 break;
             case "rundebugbrk":
-                netutil.findFreePort(this.NODE_DEBUG_PORT, "localhost", function(port) {
-                    _self.NODE_DEBUG_PORT = port;
+                netutil.findFreePort(this.DEBUG_PORT, "localhost", function(port) {
+					_self.DEBUG_PORT = port;
 
-                    message.preArgs = ["--debug-brk=" + _self.NODE_DEBUG_PORT];
-                    message.debug = true;
+					// set debugger arguments based on runner
+					// TODO: the business logic of executing the debugger should not be here
+					if ( message.runner == "js" )
+						message.preArgs = ["--debug-brk=" + _self.DEBUG_PORT];
+					else if ( message.runner == "py" )
+						message.preArgs = [process.env.PWD + "/rpdb.py","--port", _self.DEBUG_PORT];
+						
+					message.debug = true;
 					// in parallel (both operations translate to async processes):
 					// * execute a node process that executes the source file (with debug)
 					// * start a debug proxy process to handle communication with the debugger.
 					//   note: the debug proxy has a builtin retry functionality, this will
 					//         resolve incidents when the debugger is not ready yet for the
 					//		   proxy
-                    _self.$run(message, client);
-					_self.$startDebug();
+					_self.$run(message, client);
+					_self.$startDebug(message);
                 });
                 break;
             case "rundebugchrome":
@@ -86,13 +104,13 @@ sys.inherits(DebuggerPlugin, Plugin);
                 });
                 break;
             case "debugnode":
-                if (!this.nodeDebugProxy)
+                if (!this.debugProxy)
                     this.error("No debug session running!", 6, message);
                 else
-                    this.nodeDebugProxy.send(message.body);
+                    this.debugProxy.send(message.body);
                 break;
             case "debugattachnode":
-                if (this.nodeDebugProxy)
+                if (this.debugProxy)
                     this.send({"type": "node-debug-ready"}, null, _self.name);
                 break;
             case "kill":
@@ -138,10 +156,20 @@ sys.inherits(DebuggerPlugin, Plugin);
                if (!exists)
                    return _self.error("cwd does not exist: " + message.cwd, 3, message);
                 // lets check what we need to run
-                if(file.match(/\.js$/)){
+				
+				// set process arguments based on runner
+				// TODO: the business logic of executing the debugger should not be here
+				if ( message.runner == "js" )
+				{
                    var args = (message.preArgs || []).concat(file).concat(message.args || []);
                    _self.$runProc(_self.nodeCmd, args, cwd, message.env || {}, message.debug || false);
-                } else {
+                } 
+				else if ( message.runner == "py" )
+				{
+                   var args = _self.pythonArgs.concat(message.preArgs || []).concat(file).concat(message.args || []);
+                   _self.$runProc(_self.pythonCmd, args, cwd, message.env || {}, message.debug || false);
+				}
+				else {
                    _self.$runProc(file, message.args||[], cwd, message.env || {}, false);
                 }
            });
@@ -157,12 +185,16 @@ sys.inherits(DebuggerPlugin, Plugin);
             if (!(key in env))
                 env[key] = process.env[key];
         }
-
-        console.log("Executing node "+proc+" "+args.join(" ")+" "+cwd);
+				
+        console.log("Executing process "+proc+" "+args.join(" ")+" "+cwd);
 
         var child = _self.child = Spawn(proc, args, {cwd: cwd, env: env});
-        _self.debugClient = args.join(" ").search(/(?:^|\b)\-\-debug\b/) != -1;
+        //_self.debugClient = args.join(" ").search(/(?:^|\b)\-\-debug\b/) != -1;
+		// set the value of the debugClient state according if:
+		//     process to-be-executed is a debug process
+		_self.debugClient = debug || false
         _self.workspace.getExt("state").publishState();
+		// TODO: rename? it can also be python
         _self.send({"type": "node-start"}, null, name);
 
         child.stdout.on("data", sender("stdout"));
@@ -171,6 +203,7 @@ sys.inherits(DebuggerPlugin, Plugin);
         function sender(stream) {
             return function(data) {
                 var message = {
+					// TODO: rename? it can also be python
                     "type": "node-data",
                     "stream": stream,
                     "data": data.toString("utf8")
@@ -180,11 +213,12 @@ sys.inherits(DebuggerPlugin, Plugin);
         }
 
         child.on("exit", function(code) {
+			// TODO: rename? it can also be python
             _self.send({"type": "node-exit"}, null, name);
 
             _self.debugClient = false;
             delete _self.child;
-            delete _self.nodeDebugProxy;
+            delete _self.debugProxy;
         });
 
         return child;
@@ -203,11 +237,14 @@ sys.inherits(DebuggerPlugin, Plugin);
             return this.error("No debuggable application running", 4, message);
 		*/
 
-        if (this.nodeDebugProxy)
+        if (this.debugProxy)
             return this.error("Debug session already running", 5, message);
 			
-        this.nodeDebugProxy = new NodeDebugProxy(this.NODE_DEBUG_PORT);
-        this.nodeDebugProxy.on("message", function(body) {
+		if ( message.runner == "js" )
+			this.debugProxy = new NodeDebugProxy(this.DEBUG_PORT);
+		else if ( message.runner == "py" )
+			this.debugProxy = new PythonDebugProxy(this.DEBUG_PORT);
+        this.debugProxy.on("message", function(body) {
 				
             var msg = {
                 "type": "node-debug",
@@ -216,11 +253,11 @@ sys.inherits(DebuggerPlugin, Plugin);
             _self.send(msg, null, _self.name);
         });
 		
-        this.nodeDebugProxy.on("connection", function() {
+        this.debugProxy.on("connection", function() {
             _self.send({"type": "node-debug-ready"}, null, _self.name);
         });
 
-        this.nodeDebugProxy.on("end", function(errorInfo) {
+        this.debugProxy.on("end", function(errorInfo) {
 			// incase an error occured, send a message back to the client
 			if ( ( errorInfo != undefined ) && ( errorInfo != null ) )		
 			{
@@ -235,15 +272,15 @@ sys.inherits(DebuggerPlugin, Plugin);
 				_self.send({"type": "node-exit-with-error",errorMessage:errorInfo}, null, _self.name);
 				_self.debugClient = false;
 				delete _self.child;
-				delete _self.nodeDebugProxy;				
+				delete _self.debugProxy;				
 			}
 				
-            if (_self.nodeDebugProxy == this) {
-                delete _self.nodeDebugProxy;
+            if (_self.debugProxy == this) {
+                delete _self.debugProxy;
             }
         });
 
-        this.nodeDebugProxy.connect();
+        this.debugProxy.connect();
     };
 
     this.dispose = function(callback) {

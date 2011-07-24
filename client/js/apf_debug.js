@@ -54719,7 +54719,7 @@ apf.dbg = function(struct, tagName){
             dbgImpl.addEventListener("detach", _self.$onDetach.bind(_self));
             dbgImpl.addEventListener("changeFrame", _self.$onChangeFrame.bind(_self));
             
-            _self.$loadSources(function() {           
+            _self.$loadSources(function() {
 	            dbgImpl.setBreakpoints(_self.$mdlBreakpoints, function() {      
 	                _self.$debugger.backtrace(_self.$mdlStack, function() {              
 	                    var frame = _self.$mdlStack.queryNode("frame[1]");
@@ -54934,8 +54934,9 @@ return apf.dbg;
 if (apf.hasRequireJS) require.def("apf/elements/debughost",
     ["apf/elements/dbg/chromedebughost",
      "apf/elements/dbg/v8debughost", 
-     "apf/elements/dbg/v8websocketdebughost"],
-    function(ChromeDebugHost, V8DebugHost, V8WebSocketDebugHost) {
+     "apf/elements/dbg/v8websocketdebughost",
+     "apf/elements/dbg/genericwebsocketdebughost"],
+    function(ChromeDebugHost, V8DebugHost, V8WebSocketDebugHost, GenericWebSocketDebugHost) {
     
 apf.debughost = function(struct, tagName){
     this.$init(tagName || "debughost", apf.NODE_HIDDEN, struct);
@@ -54985,9 +54986,9 @@ apf.debughost = function(struct, tagName){
         if (this.$host) {
             return;
         }
-        
-        if (this.type == "chrome" || this.type == "v8" || this.type == "v8-ws") {
-            if (!apf.debughost.$o3obj && this.type !== "v8-ws") {
+		
+        if (this.type == "chrome" || this.type == "v8" || this.type == "v8-ws" || this.type == "generic-ws") {
+            if (!apf.debughost.$o3obj && this.type !== "v8-ws" && this.type !== "generic-ws") {
                 apf.debughost.$o3obj = window.o3Obj || o3.create("8A66ECAC-63FD-4AFA-9D42-3034D18C88F4", { 
                     oninstallprompt: function() { alert("can't find o3 plugin"); },
                     product: "O3Demo"
@@ -55003,6 +55004,18 @@ apf.debughost = function(struct, tagName){
                 if (!socket)
                     throw new Error("no socket found!")
                 this.$host = new V8WebSocketDebugHost(socket);
+			// case: desired debug host is of type 'generic-ws'
+            } else if (this.type == "generic-ws") {
+				// step #1: retrieve a socket for communication
+                var socket = this.dispatchEvent("socketfind");
+                if (!socket)
+					// or fail if could not
+                    throw new Error("no socket found!")
+				// step #2: some debug
+				console.debug("new host (almost): " + this.$host);
+				// step #3: create the debug host
+                this.$host = new GenericWebSocketDebugHost(socket);
+				console.debug("new host: " + this.$host);
             } else if (this.type == "chrome-ws") {
                 var socket = this.dispatchEvent("socketfind");
                 if (!socket)

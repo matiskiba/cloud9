@@ -35,7 +35,12 @@ return ext.register("ext/noderunner/noderunner", {
         dbgNode.addEventListener("onsocketfind", function() {
             return ide.socket;
         });
-
+		
+		// not sure what this does
+        dbgGeneric.addEventListener("onsocketfind", function() {
+            return ide.socket;
+        });		
+		
         stDebugProcessRunning.addEventListener("activate", this.$onDebugProcessActivate.bind(this));
         stDebugProcessRunning.addEventListener("deactivate", this.$onDebugProcessDeactivate.bind(this));
 
@@ -51,7 +56,11 @@ return ext.register("ext/noderunner/noderunner", {
     },
 
     $onDebugProcessActivate : function() {
-        dbg.attach(dbgNode, 0);
+		// is this really the way this is going to be done? Don't think so!!!	
+		if ( ddRunnerSelector.value == "py" )
+			dbg.attach(dbgGeneric, 0);
+		else
+			dbg.attach(dbgNode, 0);
     },
 
     $onDebugProcessDeactivate : function() {
@@ -145,12 +154,13 @@ return ext.register("ext/noderunner/noderunner", {
     run : function(path, args, debug) {        
         if (stProcessRunning.active || !stServerConnected.active || !path || typeof path != "string")
             return false;
-
+			
         var page = ide.getActivePageModel();
         var command = {
             "command" : debug ? "RunDebugBrk" : "Run",
             "file"    : path.replace(/^\/+/, ""),
             "args"    : args || "",
+            "runner"  : ddRunnerSelector.value, // Explicit addition; trying to affect as less logic as possible for now...			
             "env"     : {
                 "C9_SELECTED_FILE": page ? page.getAttribute("path").slice(ide.davPrefix.length) : ""
             }
